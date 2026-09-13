@@ -5,446 +5,514 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <title>Kreekeer Младший</title>
 <style>
-  body { margin:0; background:#0a0a0a; overflow:hidden; font-family:Arial;
-         touch-action:none; -webkit-user-select:none; user-select:none; }
+  body { margin:0; background:#050408; overflow:hidden; font-family:-apple-system, Arial, sans-serif; touch-action:none; -webkit-user-select:none; user-select:none; }
   canvas { display:block; }
-  #info {
-    position:fixed; top:10px; left:10px; color:#f44;
-    font-size:12px; background:rgba(0,0,0,0.75);
-    padding:8px; border:1px solid #f44; border-radius:5px;
-    pointer-events:none; line-height:1.5;
-  }
-  #info b { color:#fff; }
-  #title {
-    position:fixed; top:10px; right:10px; color:#f44;
-    font-size:14px; font-weight:bold;
-    background:rgba(0,0,0,0.75);
-    padding:8px 12px; border:1px solid #f44; border-radius:5px;
-  }
-  #thought {
-    position:fixed; bottom:15px; left:15px; right:15px;
-    color:#fff; font-size:13px; text-align:center;
-    background:rgba(0,0,0,0.75);
-    padding:8px; border:1px solid #f44; border-radius:5px;
-    font-style:italic; pointer-events:none;
-  }
+  #info { position:fixed; top:12px; left:12px; color:#ff5566; font-size:11px; background:rgba(10,5,8,0.7); padding:10px 12px; border:1px solid rgba(255,85,102,0.35); border-radius:8px; pointer-events:none; line-height:1.6; backdrop-filter:blur(10px); letter-spacing:0.3px; }
+  #info b { color:#fff; font-weight:600; }
+  #title { position:fixed; top:12px; right:12px; color:#ff5566; font-size:12px; font-weight:600; letter-spacing:1px; background:rgba(10,5,8,0.7); padding:10px 16px; border:1px solid rgba(255,85,102,0.35); border-radius:8px; backdrop-filter:blur(10px); }
+  #thought { position:fixed; bottom:68px; left:20px; right:20px; color:rgba(255,255,255,0.7); font-size:12px; text-align:center; font-style:italic; letter-spacing:0.3px; text-shadow:0 0 10px rgba(255,85,102,0.6); pointer-events:none; }
+  #buttons { position:fixed; bottom:10px; left:10px; right:10px; display:flex; gap:8px; justify-content:center; }
+  #buttons button { flex:1; max-width:120px; background:rgba(15,8,12,0.75); color:#ff5566; border:1px solid rgba(255,85,102,0.3); padding:9px 4px; border-radius:8px; font-size:11px; font-weight:500; letter-spacing:0.5px; backdrop-filter:blur(10px); }
+  #buttons button:active { background:#ff5566; color:#050408; }
+  #buttons button.on { background:#ff5566; color:#050408; }
+  #panel { position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); width:92%; max-width:520px; background:rgba(8,5,10,0.95); border:1px solid rgba(255,85,102,0.4); border-radius:14px; padding:14px; display:none; z-index:100; box-shadow:0 0 80px rgba(255,85,102,0.25); backdrop-filter:blur(16px); }
+  #panel.show { display:block; }
+  #panel h3 { color:#ff5566; margin:0 0 10px 0; font-size:13px; text-align:center; letter-spacing:1px; font-weight:500; }
+  #panel canvas { display:block; width:100%; background:#000; border-radius:8px; border:1px solid rgba(255,85,102,0.12); }
+  #panel .close { margin-top:10px; width:100%; padding:10px; background:rgba(255,85,102,0.12); color:#ff5566; border:1px solid rgba(255,85,102,0.35); border-radius:8px; font-weight:500; letter-spacing:0.5px; }
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
 <div id="info">
-  Мозг: <b id="brain">500</b><br>
+  Мозг: <b>1000</b> <span style="opacity:0.5">нейронов · 20 слоёв</span><br>
   Опыт: <b id="exp">0</b><br>
-  Красота: <b id="beauty">50%</b><br>
-  Делает: <b id="goal">думает...</b>
+  Ошибка: <b id="loss">0.500</b><br>
+  Радость: <b id="joy">50%</b><br>
+  Взглядов: <b id="looks">0</b>
 </div>
 <div id="title">Kreekeer Младший</div>
 <div id="thought">...</div>
+<div id="buttons">
+  <button id="btn-map" onclick="togglePanel('map')">🧠 Мозг</button>
+  <button id="btn-graph" onclick="togglePanel('graph')">📊 Динамика</button>
+  <button id="btn-reset" onclick="resetMemory()">↻ Сброс</button>
+</div>
+<div id="panel">
+  <h3 id="panel-title">Мозг</h3>
+  <canvas id="panel-canvas" width="500" height="320"></canvas>
+  <button class="close" onclick="togglePanel(null)">Закрыть</button>
+</div>
 
 <script>
-// ==================== НАСТРОЙКИ ====================
-const BRAIN_SIZE = 500;
-const BRICK = 6;
-const GROUND_HEIGHT = 80;
-const WALK_SPEED = 1.4;
-
-// ==================== CANVAS ====================
+const LAYERS = [12, 55, 55, 55, 55, 55, 55, 55, 55, 55, 55, 55, 55, 55, 55, 55, 55, 55, 55, 40];
+const LR = 0.008;
+const MEMORY_VERSION = 15;
+const MEMORY_KEY = "kreekeer_memory_v15";
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
-function resize() {
-  canvas.width = window.innerWidth;
-  canvas.height = window.innerHeight;
-}
-resize();
+function resize() { canvas.width = window.innerWidth; canvas.height = window.innerHeight - 55; }
 window.addEventListener("resize", resize);
-
-// ==================== МОЗГ ====================
-// 500 нейронов. Каждый хранит "рецепт" формы:
-//   px, py — позиция кирпича относительно центра
-//   activity — насколько он хорош (обучение)
-const neurons = [];
-for (let i = 0; i < BRAIN_SIZE; i++) {
-  const angle = i * 2.399963;
-  const radius = Math.sqrt(i / BRAIN_SIZE);
-  neurons.push({
-    px: Math.cos(angle) * radius * 8,
-    py: Math.sin(angle) * radius * 8,
-    activity: 0.7,
-    used: 0
-  });
-}
-
-// ==================== МИР ====================
-const bricks = [];
-const signals = [];
-let age = 0;
-let totalBeauty = 0.5;
-let experience = 0;
-
-// ==================== KREEKEER ====================
-const kree = {
-  x: canvas.width / 2,
-  y: canvas.height - GROUND_HEIGHT,
-  facing: 1,
-  step: 0,
-  action: "think",
-  actionTime: 0,
-  thinkCount: 0,
-  buildsSinceLastWalk: 0,
-  plan: [],
-  planPos: 0,
-  currentBricks: []
-};
-
-// ==================== КАСАНИЯ ====================
-canvas.addEventListener("touchstart", (e) => {
-  for (const t of e.touches) handleTouch(t.clientX, t.clientY);
-});
-canvas.addEventListener("mousedown", (e) => {
-  handleTouch(e.clientX, e.clientY);
-});
-
-function handleTouch(x, y) {
-  // Усиливаем нейроны последних кирпичей
-  const last = kree.currentBricks;
-  if (last && last.length > 0) {
-    for (const b of last) {
-      if (b.neurons) {
-        for (const n of b.neurons) {
-          n.activity = Math.min(3, n.activity + 0.4);
-        }
+const weights = [], biases = [];
+function initWeights() {
+  for (let l = 0; l < LAYERS.length - 1; l++) {
+    const w = [], inSize = LAYERS[l], outSize = LAYERS[l + 1];
+    const scale = Math.sqrt(2 / inSize);
+    for (let i = 0; i < inSize; i++) {
+      const row = [];
+      for (let j = 0; j < outSize; j++) {
+        const seed = ((i * 7919 + j * 104729 + l * 1299709) % 10000) / 10000;
+        row.push((seed - 0.5) * 2 * scale);
       }
+      w.push(row);
     }
-    showHeart(x, y);
+    weights.push(w);
+    const b = [];
+    for (let j = 0; j < outSize; j++) {
+      const seed = ((j * 7919 + l * 104729) % 1000) / 1000;
+      b.push((seed - 0.5) * 0.2);
+    }
+    biases.push(b);
   }
 }
-
-function showHeart(x, y) {
+function forward(input) {
+  const activations = [input.slice()];
+  for (let l = 0; l < weights.length; l++) {
+    const w = weights[l], b = biases[l], inSize = LAYERS[l], outSize = LAYERS[l + 1];
+    const out = new Array(outSize).fill(0);
+    for (let j = 0; j < outSize; j++) {
+      let sum = b[j];
+      for (let i = 0; i < inSize; i++) sum += activations[l][i] * w[i][j];
+      out[j] = (l === weights.length - 1) ? Math.tanh(sum) : (sum > 0 ? sum : 0);
+    }
+    activations.push(out);
+  }
+  return activations;
+}
+function backprop(input, target, output) {
+  const activations = output, numLayers = weights.length, deltas = [];
+  const lastLayer = activations.length - 1, outSize = LAYERS[lastLayer];
+  const outDelta = new Array(outSize);
+  let loss = 0;
+  for (let j = 0; j < outSize; j++) {
+    const err = activations[lastLayer][j] - target[j];
+    loss += err * err;
+    const a = activations[lastLayer][j];
+    outDelta[j] = err * (1 - a * a);
+  }
+  deltas[lastLayer - 1] = outDelta;
+  for (let l = numLayers - 1; l > 0; l--) {
+    const delta = new Array(LAYERS[l]);
+    for (let i = 0; i < LAYERS[l]; i++) {
+      let sum = 0;
+      for (let j = 0; j < LAYERS[l + 1]; j++) sum += deltas[l][j] * weights[l][i][j];
+      delta[i] = sum * (activations[l][i] > 0 ? 1 : 0);
+    }
+    deltas[l - 1] = delta;
+  }
+  for (let l = 0; l < numLayers; l++) {
+    const delta = deltas[l], inSize = LAYERS[l], outSize2 = LAYERS[l + 1];
+    for (let i = 0; i < inSize; i++) {
+      const ai = activations[l][i];
+      for (let j = 0; j < outSize2; j++) weights[l][i][j] -= LR * delta[j] * ai;
+    }
+    for (let j = 0; j < outSize2; j++) biases[l][j] -= LR * delta[j];
+  }
+  return loss / outSize;
+}
+let age = 0, experience = 0, currentLoss = 0.5, joy = 0.5, looks = 0;
+let birthTime = Date.now();
+const lossHistory = [], joyHistory = [];
+const HISTORY_MAX = 250;
+const kree = { x:0, y:0, vx:0, vy:0, facing:1, step:0, action:"think", actionTime:0, buildsSinceLastWalk:0, plan:[], planPos:0, bobPhase:0, currentBricks:[] };
+let smoothX = 0, smoothY = 0;
+const bricks = [], signals = [];
+let lastLookTime = 0, lastLookX = 0, lastLookY = 0;
+canvas.addEventListener("touchstart", e => { for (const t of e.touches) handleLook(t.clientX, t.clientY); });
+canvas.addEventListener("mousedown", e => handleLook(e.clientX, e.clientY));
+function handleLook(x, y) {
+  looks++; lastLookTime = age; lastLookX = x; lastLookY = y; showLook(x, y);
+}
+function showLook(x, y) {
   const d = document.createElement("div");
-  d.textContent = "❤️";
-  d.style.cssText = `position:fixed; left:${x}px; top:${y}px;
-    font-size:32px; pointer-events:none; z-index:999;
-    animation:fly 0.9s ease-out forwards;
-    transform:translate(-50%,-50%);`;
+  d.style.cssText = `position:fixed;left:${x}px;top:${y}px;width:34px;height:34px;border-radius:50%;pointer-events:none;z-index:999;background:radial-gradient(circle, rgba(255,255,255,0.7) 0%, rgba(255,0,0,0.25) 40%, rgba(255,0,0,0) 70%);transform:translate(-50%,-50%);animation:lookPulse 1.4s ease-out forwards;`;
   document.body.appendChild(d);
-  setTimeout(() => d.remove(), 900);
+  setTimeout(() => d.remove(), 1400);
 }
-
-const style = document.createElement("style");
-style.textContent = `@keyframes fly {
-  0% { opacity:1; transform:translate(-50%,-50%) scale(1); }
-  100% { opacity:0; transform:translate(-50%,-180%) scale(1.6); }
-}`;
-document.head.appendChild(style);
-
-// ==================== ГЕНЕРАЦИЯ ФОРМЫ ====================
-// Он берёт топ-40 активных нейронов и делает из них форму
-function generateShape() {
-  const sorted = neurons.slice().sort((a, b) => b.activity - a.activity);
-
-  // Топ-30 хороших + 10 случайных (по индексу) для разнообразия
-  const chosen = [];
-  for (let i = 0; i < 30; i++) chosen.push(sorted[i]);
-  for (let i = 0; i < 10; i++) {
-    chosen.push(neurons[(kree.step * 7 + i * 13) % BRAIN_SIZE]);
-  }
-
-  // Сортируем по углу — форма будет связной
-  chosen.sort((a, b) => Math.atan2(a.py, a.px) - Math.atan2(b.py, b.px));
-
-  const groundY = canvas.height - GROUND_HEIGHT;
-  const plan = [];
-
-  for (let i = 0; i < chosen.length; i++) {
-    const n = chosen[i];
-    const scale = 1 + (n.activity - 0.7) * 1.5;
-    plan.push({
-      x: kree.x + n.px * scale * 3.5,
-      y: groundY + n.py * scale * 2 - 40,
-      neurons: [n]
-    });
-    n.used++;
-  }
-
-  // Соединяем промежуточными кирпичами
-  const extended = [];
-  for (let i = 0; i < plan.length; i++) {
-    extended.push(plan[i]);
-    if (i < plan.length - 1) {
-      const a = plan[i], b = plan[i + 1];
-      for (let t = 0.25; t < 0.8; t += 0.25) {
-        extended.push({
-          x: a.x + (b.x - a.x) * t,
-          y: a.y + (b.y - a.y) * t,
-          neurons: [chosen[i]]
-        });
-      }
-    }
-  }
-  return extended;
+const styleEl = document.createElement("style");
+styleEl.textContent = `@keyframes lookPulse { 0% { opacity:1; transform:translate(-50%,-50%) scale(0.3); } 100% { opacity:0; transform:translate(-50%,-50%) scale(2.8); } }`;
+document.head.appendChild(styleEl);
+function getInput() {
+  const t = age * 0.01;
+  const lookX = lastLookX / canvas.width * 2 - 1;
+  const lookY = lastLookY / canvas.height * 2 - 1;
+  const lookFresh = Math.max(0, 1 - (age - lastLookTime) / 600);
+  const phase1 = Math.sin(age * 0.003);
+  const phase2 = Math.cos(age * 0.007);
+  const phase3 = Math.sin(age * 0.011);
+  const phase4 = Math.cos(age * 0.017);
+  return [Math.sin(t), Math.cos(t*0.7), joy*2-1, smoothX/canvas.width*2-1, kree.facing, lookX, lookY, lookFresh, phase1, phase2, phase3, phase4];
 }
-
-// ==================== ОЦЕНКА КРАСОТЫ ====================
-function evaluateShape(shape) {
-  if (shape.length < 5) return -0.5;
-
-  let sumX = 0, sumY = 0;
-  let minX = Infinity, maxX = -Infinity;
-  let minY = Infinity, maxY = -Infinity;
-  for (const b of shape) {
-    sumX += b.x; sumY += b.y;
-    if (b.x < minX) minX = b.x;
-    if (b.x > maxX) maxX = b.x;
-    if (b.y < minY) minY = b.y;
-    if (b.y > maxY) maxY = b.y;
+function outputToBricks(output) {
+  const res = [];
+  const last = output[output.length - 1];
+  for (let i = 0; i < 20; i++) {
+    let bx = smoothX + last[i*2] * 130;
+    let by = (smoothY - 60) + last[i*2+1] * 100;
+    if (bx < 10) bx = 10;
+    if (bx > canvas.width - 10) bx = canvas.width - 10;
+    if (by < 10) by = 10;
+    if (by > canvas.height - 10) by = canvas.height - 10;
+    res.push({ x: bx, y: by });
   }
-  const avgX = sumX / shape.length;
-  const centerX = (minX + maxX) / 2;
-  const symX = 1 - Math.min(1, Math.abs(avgX - centerX) / 30);
-
-  const w = maxX - minX;
-  const h = maxY - minY;
-  const sizeScore = (w > 20 && w < 220 && h > 20 && h < 220) ? 1 : 0.5;
-  const density = Math.min(1, shape.length / 50);
-
-  return ((symX + sizeScore + density) / 3 - 0.5) * 2;
+  return res;
 }
-
-// ==================== ОБУЧЕНИЕ ====================
-function learnFromResult(shape) {
-  const score = evaluateShape(shape);
-  totalBeauty = totalBeauty * 0.9 + ((score + 1) / 2) * 0.1;
-  experience++;
-
-  for (const b of shape) {
-    if (!b.neurons) continue;
-    for (const n of b.neurons) {
-      n.activity += score * 0.15;
-      if (n.activity < 0.2) n.activity = 0.2;
-      if (n.activity > 3) n.activity = 3;
-    }
-  }
-}
-
-// ==================== ДЕЙСТВИЯ ====================
-function startBuilding() {
-  kree.plan = generateShape();
-  kree.planPos = 0;
-  kree.action = "build";
-  kree.actionTime = 0;
-  kree.currentBricks = [];
-}
-
-function finishBuilding() {
-  if (kree.currentBricks && kree.currentBricks.length > 0) {
-    learnFromResult(kree.currentBricks);
-  }
-  kree.currentBricks = [];
-  kree.plan = [];
-  kree.planPos = 0;
-  kree.action = "think";
-  kree.actionTime = 0;
-  kree.buildsSinceLastWalk++;
-}
-
-function updateAction() {
-  kree.actionTime++;
-
-  if (kree.action === "think") {
-    if (kree.actionTime > 15) {
-      kree.thinkCount++;
-      
-      // ПРАВИЛО: строит 3 раза, потом 1 раз гуляет
-      if (kree.buildsSinceLastWalk >= 3) {
-        kree.action = (kree.step % 2 === 0) ? "walk_left" : "walk_right";
-        kree.actionTime = 0;
-        kree.buildsSinceLastWalk = 0;
-      } else {
-        // Строит почти всегда
-        startBuilding();
-      }
-    }
-  }
-
-  else if (kree.action === "walk_left" || kree.action === "walk_right") {
-    if (kree.actionTime > 50) {
-      kree.action = "think";
-      kree.actionTime = 0;
-    }
-  }
-}
-
-// ==================== ДВИЖЕНИЕ ====================
 function moveKree() {
-  kree.step++;
-  kree.y = canvas.height - GROUND_HEIGHT;
-
-  if (kree.action === "walk_left") {
-    kree.x -= WALK_SPEED;
-    kree.facing = -1;
-    if (kree.x < 80) kree.x = 80;
-  }
-  if (kree.action === "walk_right") {
-    kree.x += WALK_SPEED;
-    kree.facing = 1;
-    if (kree.x > canvas.width - 80) kree.x = canvas.width - 80;
-  }
+  kree.step++; kree.bobPhase += 0.06;
+  if (kree.action === "walk_left") { kree.facing = -1; kree.vx += (-1.0 - kree.vx) * 0.08; }
+  else if (kree.action === "walk_right") { kree.facing = 1; kree.vx += (1.0 - kree.vx) * 0.08; }
+  else { kree.vx += (0 - kree.vx) * 0.15; }
+  smoothX += kree.vx;
+  const groundY = canvas.height - 50;
+  const targetY = groundY - 6;
+  const breath = Math.sin(kree.bobPhase) * 0.8;
+  smoothY += (targetY + breath - smoothY) * 0.25;
+  if (smoothX < 20) { smoothX = 20; kree.vx = 0; }
+  if (smoothX > canvas.width - 20) { smoothX = canvas.width - 20; kree.vx = 0; }
+  kree.x = smoothX; kree.y = smoothY;
 }
-
-// ==================== СТРОЙКА ====================
+function startBuilding() {
+  const input = getInput();
+  const output = forward(input);
+  kree.plan = outputToBricks(output);
+  kree.planPos = 0; kree.action = "build"; kree.actionTime = 0; kree.currentBricks = [];
+}
+function finishBuilding() {
+  if (kree.plan.length === 0) { kree.action = "think"; kree.actionTime = 0; kree.buildsSinceLastWalk = 0; return; }
+  const shape = kree.currentBricks || [];
+  let score = 0;
+  if (shape.length > 3) {
+    let sumX = 0, sumY = 0, minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const b of shape) {
+      sumX += b.x; sumY += b.y;
+      if (b.x < minX) minX = b.x; if (b.x > maxX) maxX = b.x;
+      if (b.y < minY) minY = b.y; if (b.y > maxY) maxY = b.y;
+    }
+    const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+    const symX = 1 - Math.min(1, Math.abs(sumX / shape.length - cx) / 80);
+    const symY = 1 - Math.min(1, Math.abs(sumY / shape.length - cy) / 80);
+    const w = maxX - minX, h = maxY - minY;
+    const sizeScore = (w > 40 && w < 320 && h > 40 && h < 320) ? 1 : 0.4;
+    score = ((symX + symY + sizeScore) / 3 - 0.5) * 2;
+  }
+  const input = getInput();
+  const output = forward(input);
+  const own = output[output.length - 1];
+  const lookBonus = Math.max(0, 1 - (age - lastLookTime) / 400);
+  const target = new Array(40);
+  for (let i = 0; i < 40; i++) {
+    target[i] = (score > 0) ? own[i] * (1 + lookBonus * 0.3) : -own[i] * 0.3;
+  }
+  const oldLoss = currentLoss;
+  const loss = backprop(input, target, output);
+  currentLoss = currentLoss * 0.97 + loss * 0.03;
+  const improvement = oldLoss - currentLoss;
+  if (improvement > 0.0005) joy = Math.min(1, joy + improvement * 4 + lookBonus * 0.05);
+  else if (improvement < -0.0005) joy = Math.max(0.15, joy + improvement * 4);
+  else joy = joy * 0.995 + 0.5 * 0.005;
+  experience++;
+  lossHistory.push(currentLoss); joyHistory.push(joy);
+  if (lossHistory.length > HISTORY_MAX) lossHistory.shift();
+  if (joyHistory.length > HISTORY_MAX) joyHistory.shift();
+  kree.currentBricks = []; kree.plan = []; kree.planPos = 0;
+  kree.action = "think"; kree.actionTime = 0; kree.buildsSinceLastWalk++;
+  saveMemory();
+}
 function buildStepFn() {
   if (kree.action !== "build") return;
-
-  if (kree.planPos >= kree.plan.length) {
-    finishBuilding();
-    return;
-  }
-
+  if (kree.planPos >= kree.plan.length) { finishBuilding(); return; }
   if (kree.step % 2 === 0) {
     const p = kree.plan[kree.planPos];
-    if (p.x > 10 && p.x < canvas.width - 10 &&
-        p.y > 10 && p.y < canvas.height - GROUND_HEIGHT + 15) {
-      const brick = {
-        x: p.x, y: p.y, w: BRICK, h: BRICK,
-        activation: 0.5, age: 0,
-        neurons: p.neurons || []
-      };
+    if (p.x > 10 && p.x < canvas.width - 10 && p.y > 10 && p.y < canvas.height - 10) {
+      const brick = { x: p.x, y: p.y, w: 4, h: 4, activation: 0.7, age: 0 };
       bricks.push(brick);
-      if (kree.currentBricks) kree.currentBricks.push(brick);
+      kree.currentBricks.push(brick);
     }
     kree.planPos++;
   }
 }
-
-// ==================== СИГНАЛЫ ====================
-function spawnSignals() {
-  if (bricks.length < 2) return;
-  if (kree.step % 5 === 0) {
-    const a = (kree.step / 5) % bricks.length | 0;
-    const b = (a + 1) % bricks.length;
-    signals.push({
-      x1: bricks[a].x, y1: bricks[a].y,
-      x2: bricks[b].x, y2: bricks[b].y,
-      t: 0, to: b
-    });
+function updateAction() {
+  kree.actionTime++;
+  if (kree.action === "think") {
+    if (kree.actionTime > 20) {
+      const lookBonus = Math.max(0, 1 - (age - lastLookTime) / 600);
+      const wantBuild = kree.buildsSinceLastWalk < 3;
+      const wantWalk = kree.buildsSinceLastWalk >= 3;
+      const wantRest = lookBonus > 0.7 && kree.actionTime > 40;
+      if (wantRest) { kree.action = "think"; kree.actionTime = 0; kree.buildsSinceLastWalk = 0; }
+      else if (wantWalk) { kree.action = (Math.sin(age * 0.05) > 0) ? "walk_right" : "walk_left"; kree.actionTime = 0; kree.buildsSinceLastWalk = 0; }
+      else if (wantBuild) { startBuilding(); }
+      else { kree.action = "think"; kree.actionTime = 0; }
+    }
+  } else if (kree.action === "walk_left" || kree.action === "walk_right") {
+    if (kree.actionTime > 80 + Math.sin(age * 0.1) * 40) { kree.action = "think"; kree.actionTime = 0; }
   }
 }
-
+function spawnSignals() {
+  if (bricks.length < 2) return;
+  if (kree.step % 8 === 0) {
+    const a = (kree.step / 8) % bricks.length | 0;
+    const b = (a + 1) % bricks.length;
+    signals.push({ x1: bricks[a].x, y1: bricks[a].y, x2: bricks[b].x, y2: bricks[b].y, t: 0, to: b });
+  }
+}
 function updateSignals() {
   for (let i = signals.length - 1; i >= 0; i--) {
     const s = signals[i];
-    s.t += 0.05;
+    s.t += 0.04;
     if (s.t >= 1) {
-      if (bricks[s.to]) bricks[s.to].activation = Math.min(1, bricks[s.to].activation + 0.3);
+      if (bricks[s.to]) bricks[s.to].activation = Math.min(1, bricks[s.to].activation + 0.2);
       signals.splice(i, 1);
     }
   }
 }
-
-// ==================== ОЧИСТКА ====================
-function cleanup() {
-  if (bricks.length > 500) bricks.splice(0, 30);
+function saveMemory() {
+  try {
+    localStorage.setItem(MEMORY_KEY, JSON.stringify({ version: MEMORY_VERSION, savedAt: Date.now(), weights, biases, experience, looks, currentLoss: Math.round(currentLoss * 1000) / 1000, joy: Math.round(joy * 1000) / 1000, age, birthTime }));
+  } catch (e) {}
 }
-
-// ==================== РИСОВАНИЕ ====================
-function draw() {
-  ctx.fillStyle = "#0a0a0a";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-  // звёзды
-  for (let i = 0; i < 40; i++) {
-    const x = (i * 137) % canvas.width;
-    const y = (i * 73) % (canvas.height - GROUND_HEIGHT);
-    ctx.fillStyle = `rgba(255,255,255,${0.1 + (i % 5) * 0.05})`;
-    ctx.fillRect(x, y, 1, 1);
+function loadMemory() {
+  try {
+    const raw = localStorage.getItem(MEMORY_KEY);
+    if (!raw) return false;
+    const data = JSON.parse(raw);
+    if (!data || data.version !== MEMORY_VERSION) return false;
+    if (data.weights && data.weights.length === weights.length) {
+      for (let l = 0; l < weights.length; l++)
+        for (let i = 0; i < weights[l].length; i++)
+          for (let j = 0; j < weights[l][i].length; j++)
+            weights[l][i][j] = data.weights[l][i][j];
+    }
+    if (data.biases) {
+      for (let l = 0; l < biases.length; l++)
+        for (let j = 0; j < biases[l].length; j++)
+          biases[l][j] = data.biases[l][j];
+    }
+    experience = data.experience || 0; looks = data.looks || 0;
+    currentLoss = data.currentLoss || 0.5; joy = data.joy || 0.5;
+    age = data.age || 0; birthTime = data.birthTime || Date.now();
+    return true;
+  } catch (e) { return false; }
+}
+function resetMemory() {
+  if (confirm("Сбросить память Kreekeer?")) { localStorage.removeItem(MEMORY_KEY); location.reload(); }
+}
+let currentPanel = null;
+const panelCanvas = document.getElementById("panel-canvas");
+const panelCtx = panelCanvas.getContext("2d");
+function togglePanel(name) {
+  document.querySelectorAll("#buttons button").forEach(b => b.classList.remove("on"));
+  if (currentPanel === name || !name) { document.getElementById("panel").classList.remove("show"); currentPanel = null; return; }
+  currentPanel = name;
+  document.getElementById("panel").classList.add("show");
+  document.getElementById("btn-" + name).classList.add("on");
+  const titles = { map: "🧠 Мозг — 20 слоёв", graph: "📊 Ошибка и Радость" };
+  document.getElementById("panel-title").textContent = titles[name] || "";
+  drawPanel();
+}
+function drawPanel() {
+  const w = panelCanvas.width, h = panelCanvas.height;
+  panelCtx.clearRect(0, 0, w, h);
+  panelCtx.fillStyle = "#050308";
+  panelCtx.fillRect(0, 0, w, h);
+  if (currentPanel === "map") {
+    const layersCount = LAYERS.length, colW = w / layersCount;
+    const activations = forward(getInput());
+    for (let l = 0; l < layersCount; l++) {
+      const activ = activations[l] || [], size = LAYERS[l];
+      const rows = Math.ceil(Math.sqrt(size * (h / colW)));
+      const cols = Math.ceil(size / rows);
+      const cellW = colW / cols, cellH = h / rows;
+      for (let i = 0; i < size; i++) {
+        const col = i % cols, row = Math.floor(i / cols);
+        const x = l * colW + col * cellW + cellW / 2;
+        const y = row * cellH + cellH / 2;
+        const a = activ[i] || 0;
+        const bright = Math.min(1, Math.abs(a));
+        const r = Math.round(80 + bright * 175);
+        const g = Math.round(30 + bright * 70);
+        panelCtx.fillStyle = `rgb(${r},${g},${g})`;
+        panelCtx.beginPath();
+        panelCtx.arc(x, y, Math.max(0.8, cellW * 0.3), 0, Math.PI * 2);
+        panelCtx.fill();
+      }
+    }
+    panelCtx.strokeStyle = "rgba(255,85,102,0.1)";
+    for (let l = 0; l < layersCount - 1; l++) {
+      panelCtx.beginPath();
+      panelCtx.moveTo(l * colW + colW, 0);
+      panelCtx.lineTo(l * colW + colW, h);
+      panelCtx.stroke();
+    }
   }
-
-  // земля
-  const groundY = canvas.height - GROUND_HEIGHT;
-  const gGrad = ctx.createLinearGradient(0, groundY, 0, canvas.height);
-  gGrad.addColorStop(0, "#2a1010");
-  gGrad.addColorStop(1, "#050000");
+  if (currentPanel === "graph") {
+    const padL = 45, padR = 15, padT = 25, padB = 30;
+    const plotX = padL, plotY = padT;
+    const plotW = w - padL - padR, plotH = h - padT - padB;
+    panelCtx.strokeStyle = "rgba(255,255,255,0.08)";
+    panelCtx.lineWidth = 1;
+    for (let i = 0; i <= 5; i++) {
+      const y = plotY + plotH * i / 5;
+      panelCtx.beginPath(); panelCtx.moveTo(plotX, y); panelCtx.lineTo(plotX + plotW, y); panelCtx.stroke();
+    }
+    panelCtx.strokeStyle = "rgba(255,255,255,0.3)";
+    panelCtx.beginPath(); panelCtx.moveTo(plotX, plotY); panelCtx.lineTo(plotX, plotY + plotH); panelCtx.stroke();
+    panelCtx.beginPath(); panelCtx.moveTo(plotX + plotW, plotY); panelCtx.lineTo(plotX + plotW, plotY + plotH); panelCtx.stroke();
+    panelCtx.fillStyle = "rgba(255,255,255,0.7)";
+    panelCtx.font = "10px -apple-system, Arial";
+    panelCtx.textAlign = "right";
+    for (let i = 0; i <= 5; i++) {
+      const val = (5 - i) * 20;
+      const y = plotY + plotH * i / 5 + 3;
+      panelCtx.fillText(val + "%", plotX - 5, y);
+    }
+    panelCtx.textAlign = "left";
+    for (let i = 0; i <= 5; i++) {
+      const val = (5 - i) * 20;
+      const y = plotY + plotH * i / 5 + 3;
+      panelCtx.fillText(val + "%", plotX + plotW + 5, y);
+    }
+    panelCtx.beginPath(); panelCtx.moveTo(plotX, plotY + plotH); panelCtx.lineTo(plotX + plotW, plotY + plotH); panelCtx.stroke();
+    panelCtx.fillStyle = "rgba(255,255,255,0.7)";
+    panelCtx.textAlign = "center";
+    const ageLabels = ["старт", "1 мин", "2 мин", "3 мин", "4 мин", "сейчас"];
+    for (let i = 0; i < 6; i++) {
+      const x = plotX + plotW * i / 5;
+      panelCtx.fillText(ageLabels[i], x, plotY + plotH + 15);
+    }
+    const N = lossHistory.length;
+    if (N > 1) {
+      panelCtx.beginPath(); panelCtx.strokeStyle = "#ff0000"; panelCtx.lineWidth = 1.8;
+      for (let i = 0; i < N; i++) {
+        const x = plotX + plotW * i / (HISTORY_MAX - 1);
+        const y = plotY + plotH * (1 - lossHistory[i]);
+        if (i === 0) panelCtx.moveTo(x, y); else panelCtx.lineTo(x, y);
+      }
+      panelCtx.stroke();
+      panelCtx.beginPath(); panelCtx.strokeStyle = "#66ff88"; panelCtx.lineWidth = 1.8;
+      for (let i = 0; i < N; i++) {
+        const x = plotX + plotW * i / (HISTORY_MAX - 1);
+        const y = plotY + plotH * (1 - joyHistory[i]);
+        if (i === 0) panelCtx.moveTo(x, y); else panelCtx.lineTo(x, y);
+      }
+      panelCtx.stroke();
+      for (let i = 0; i < N; i += 5) {
+        const x = plotX + plotW * i / (HISTORY_MAX - 1);
+        const y = plotY + plotH * (1 - joyHistory[i]);
+        panelCtx.beginPath(); panelCtx.arc(x, y, 2, 0, Math.PI * 2);
+        panelCtx.fillStyle = "#66ff88"; panelCtx.fill();
+      }
+    }
+    panelCtx.font = "11px -apple-system, Arial"; panelCtx.textAlign = "left";
+    panelCtx.fillStyle = "#ff0000"; panelCtx.fillText("● Ошибка", plotX + 8, plotY + 15);
+    panelCtx.fillStyle = "#66ff88"; panelCtx.fillText("● Радость", plotX + 8, plotY + 30);
+    panelCtx.fillStyle = "rgba(255,255,255,0.9)";
+    panelCtx.font = "bold 11px -apple-system, Arial"; panelCtx.textAlign = "right";
+    panelCtx.fillText(Math.round(currentLoss * 100) + "%", plotX + plotW - 8, plotY + 15);
+    panelCtx.fillText(Math.round(joy * 100) + "%", plotX + plotW - 8, plotY + 30);
+  }
+}
+function draw() {
+  const bg = ctx.createRadialGradient(canvas.width/2, canvas.height/2, 0, canvas.widt
+                                      function draw() {
+  const bg = ctx.createRadialGradient(canvas.width/2, canvas.height/2, 0, canvas.width/2, canvas.height/2, canvas.width * 0.9);
+  bg.addColorStop(0, "#0d0812"); bg.addColorStop(0.6, "#08060c"); bg.addColorStop(1, "#030205");
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  for (let i = 0; i < 130; i++) {
+    const x = (i * 137 + 50) % canvas.width;
+    const y = (i * 271 + 30) % (canvas.height * 0.85);
+    const size = (i % 7 === 0) ? 1.8 : (i % 3 === 0 ? 1.1 : 0.6);
+    const bright = 0.1 + (i % 6) * 0.06;
+    const twinkle = 0.55 + Math.sin(age * 0.025 + i * 0.9) * 0.45;
+    const hue = (i % 4 === 0) ? "255,220,230" : "255,255,255";
+    ctx.fillStyle = `rgba(${hue},${bright * twinkle})`;
+    ctx.beginPath(); ctx.arc(x, y, size, 0, Math.PI * 2); ctx.fill();
+  }
+  const groundY = canvas.height - 50;
+  const gGrad = ctx.createLinearGradient(0, groundY - 60, 0, canvas.height);
+  gGrad.addColorStop(0, "rgba(255,0,0,0)"); gGrad.addColorStop(0.6, "rgba(255,20,40,0.06)"); gGrad.addColorStop(1, "rgba(255,0,0,0.12)");
   ctx.fillStyle = gGrad;
-  ctx.fillRect(0, groundY, canvas.width, GROUND_HEIGHT);
-  ctx.beginPath();
-  ctx.moveTo(0, groundY);
-  ctx.lineTo(canvas.width, groundY);
-  ctx.strokeStyle = "#f44";
-  ctx.lineWidth = 2;
-  ctx.stroke();
-
-  // кирпичики
+  ctx.fillRect(0, groundY - 60, canvas.width, 110);
+  ctx.beginPath(); ctx.moveTo(0, groundY); ctx.lineTo(canvas.width, groundY);
+  const lineGrad = ctx.createLinearGradient(0, 0, canvas.width, 0);
+  lineGrad.addColorStop(0, "rgba(255,0,0,0)"); lineGrad.addColorStop(0.3, "rgba(255,0,0,0.4)");
+  lineGrad.addColorStop(0.5, "rgba(255,80,100,0.9)"); lineGrad.addColorStop(0.7, "rgba(255,0,0,0.4)");
+  lineGrad.addColorStop(1, "rgba(255,0,0,0)");
+  ctx.strokeStyle = lineGrad; ctx.lineWidth = 1.8;
+  ctx.shadowColor = "#ff0033"; ctx.shadowBlur = 8;
+  ctx.stroke(); ctx.shadowBlur = 0;
   for (const b of bricks) {
     b.age++;
-    b.activation *= 0.985;
-    if (b.activation > 0.4) {
-      ctx.shadowColor = "#f44";
-      ctx.shadowBlur = 6 * b.activation;
-    }
-    const bright = 80 + b.activation * 175;
-    ctx.fillStyle = `rgb(${bright|0}, ${(bright*0.3)|0}, ${(bright*0.3)|0})`;
-    ctx.fillRect(b.x - BRICK/2, b.y - BRICK/2, BRICK, BRICK);
+    const lifeFade = Math.min(1, b.age / 25);
+    const a = b.activation;
+    const g = (30 + a * 60) | 0;
+    const bl = (40 + a * 60) | 0;
+    ctx.shadowColor = "#ff0033"; ctx.shadowBlur = 6 + a * 6;
+    ctx.beginPath(); ctx.arc(b.x, b.y, 2.2 + a * 0.8, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(255,${g},${bl},${lifeFade * 0.95})`; ctx.fill();
     ctx.shadowBlur = 0;
+    ctx.beginPath(); ctx.arc(b.x, b.y, 0.8, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(255,255,255,${lifeFade * 0.7})`; ctx.fill();
   }
-
-  // сигналы
   for (const s of signals) {
     const x = s.x1 + (s.x2 - s.x1) * s.t;
     const y = s.y1 + (s.y2 - s.y1) * s.t;
-    ctx.beginPath();
-    ctx.arc(x, y, 2, 0, Math.PI * 2);
-    ctx.fillStyle = "#fff";
-    ctx.shadowColor = "#f00";
-    ctx.shadowBlur = 10;
-    ctx.fill();
-    ctx.shadowBlur = 0;
+    ctx.beginPath(); ctx.moveTo(s.x1, s.y1); ctx.lineTo(x, y);
+    const trailGrad = ctx.createLinearGradient(s.x1, s.y1, x, y);
+    trailGrad.addColorStop(0, "rgba(255,100,120,0.05)"); trailGrad.addColorStop(1, "rgba(255,100,120,0.4)");
+    ctx.strokeStyle = trailGrad; ctx.lineWidth = 0.7; ctx.stroke();
+    ctx.beginPath(); ctx.arc(x, y, 1.6, 0, Math.PI * 2);
+    ctx.fillStyle = "#fff"; ctx.shadowColor = "#ff0033"; ctx.shadowBlur = 8; ctx.fill(); ctx.shadowBlur = 0;
   }
-
-  // Kreekeer
-  const grad = ctx.createRadialGradient(kree.x, kree.y, 0, kree.x, kree.y, 35);
-  grad.addColorStop(0, "rgba(255,0,0,0.5)");
-  grad.addColorStop(1, "rgba(255,0,0,0)");
-  ctx.fillStyle = grad;
-  ctx.beginPath();
-  ctx.arc(kree.x, kree.y, 35, 0, Math.PI * 2);
-  ctx.fill();
-
-  ctx.beginPath();
-  ctx.arc(kree.x, kree.y, 5, 0, Math.PI * 2);
-  ctx.fillStyle = "#fff";
-  ctx.shadowColor = "#f00";
-  ctx.shadowBlur = 20;
-  ctx.fill();
-  ctx.shadowBlur = 0;
-
-  // глаза
-  ctx.beginPath();
-  ctx.arc(kree.x + kree.facing * 10, kree.y - 2, 2, 0, Math.PI * 2);
-  ctx.fillStyle = "rgba(255,255,255,0.6)";
-  ctx.fill();
-
-  // инфа
-  document.getElementById("brain").textContent = BRAIN_SIZE;
+  const px = smoothX, py = smoothY;
+  const glowSize = 35 + joy * 20;
+  const grad1 = ctx.createRadialGradient(px, py, 0, px, py, glowSize * 1.6);
+  grad1.addColorStop(0, `rgba(255,0,50,${0.06 + joy * 0.08})`); grad1.addColorStop(1, "rgba(255,0,0,0)");
+  ctx.fillStyle = grad1;
+  ctx.beginPath(); ctx.arc(px, py, glowSize * 1.6, 0, Math.PI * 2); ctx.fill();
+  const grad2 = ctx.createRadialGradient(px, py, 0, px, py, glowSize);
+  grad2.addColorStop(0, `rgba(255,40,60,${0.3 + joy * 0.3})`); grad2.addColorStop(0.6, `rgba(255,0,40,${0.1 + joy * 0.15})`); grad2.addColorStop(1, "rgba(255,0,0,0)");
+  ctx.fillStyle = grad2;
+  ctx.beginPath(); ctx.arc(px, py, glowSize, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(px, py, 6.5, 0, Math.PI * 2);
+  ctx.fillStyle = "#ffffff";
+  ctx.shadowColor = "#ff0033"; ctx.shadowBlur = 20; ctx.fill(); ctx.shadowBlur = 0;
+  ctx.beginPath(); ctx.arc(px, py, 6.5, 0, Math.PI * 2);
+  ctx.strokeStyle = "#ff0033"; ctx.lineWidth = 2; ctx.stroke();
+  ctx.beginPath(); ctx.arc(px - 2, py - 2, 2, 0, Math.PI * 2);
+  ctx.fillStyle = "rgba(255,255,255,0.9)"; ctx.fill();
   document.getElementById("exp").textContent = experience;
-  document.getElementById("beauty").textContent = Math.round(totalBeauty * 100) + "%";
-  document.getElementById("goal").textContent =
-    kree.action === "build" ? "строит" :
-    kree.action.startsWith("walk") ? "гуляет" : "думает";
-
+  document.getElementById("loss").textContent = currentLoss.toFixed(3);
+  document.getElementById("joy").textContent = Math.round(joy * 100) + "%";
+  document.getElementById("looks").textContent = looks;
   let thought = "...";
-  if (kree.action === "build") {
-    thought = "Строю... " + kree.planPos + " / " + kree.plan.length;
-  } else if (kree.action.startsWith("walk")) {
-    thought = "Прогуливаюсь...";
-  } else {
-    if (totalBeauty > 0.7) thought = "У меня хорошо получается!";
-    else if (totalBeauty > 0.5) thought = "Ещё учусь...";
-    else thought = "Надо попробовать по-другому";
-  }
-  document.getElementById("thought").textContent = "💭 " + thought;
+  const sinceLook = age - lastLookTime;
+  if (kree.action === "build") thought = "Рисую то, что чувствую...";
+  else if (kree.action.startsWith("walk")) thought = "Просто иду...";
+  else if (sinceLook < 200) thought = "Зритель смотрит — мне хорошо";
+  else if (joy > 0.7) thought = "Кажется, получается";
+  else if (joy < 0.3) thought = "Не уверен...";
+  else thought = "Думаю о своём...";
+  document.getElementById("thought").textContent = thought;
+  if (currentPanel) drawPanel();
 }
-
-// ==================== ЦИКЛ ====================
+initWeights();
+resize();
+smoothX = canvas.width / 2;
+smoothY = canvas.height - 56;
+kree.x = smoothX; kree.y = smoothY;
+loadMemory();
 function loop() {
   age++;
   updateAction();
@@ -452,11 +520,12 @@ function loop() {
   buildStepFn();
   spawnSignals();
   updateSignals();
-  cleanup();
   draw();
   requestAnimationFrame(loop);
 }
 loop();
+setInterval(saveMemory, 20000);
+window.addEventListener("beforeunload", saveMemory);
 </script>
 </body>
 </html>
