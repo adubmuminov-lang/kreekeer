@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Kreekeer Младший</title>
+<style>
+  body { margin:0; background:#0a0a0a; overflow:hidden; font-family:Arial;
+         touch-action:none; -webkit-user-select:none; user-select:none; }
+  canvas { display:block; }
+  #info {
+    position:fixed; top:10px; left:10px; color:#f44;
+    font-size:12px; background:rgba(0,0,0,0.75);
+    padding:8px; border:1px solid #f44; border-radius:5px;
+    pointer-events:none; line-height:1.5;
+  }
+  #info b { color:#fff; }
+  #title {
+    position:fixed; top:10px; right:10px; color:#f44;
+    font-size:14px; font-weight:bold;
+    background:rgba(0,0,0,0.75);
+    padding:8px 12px; border:1px solid #f44; border-radius:5px;
+  }
+  #thought {
+    position:fixed; bottom:15px; left:15px; right:15px;
+    color:#fff; font-size:13px; text-align:center;
+    background:rgba(0,0,0,0.75);
+    padding:8px; border:1px solid #f44; border-radius:5px;
+    font-style:italic; pointer-events:none;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="info">
+  Мозг: <b id="brain">500</b><br>
+  Опыт: <b id="exp">0</b><br>
+  Красота: <b id="beauty">50%</b><br>
+  Делает: <b id="goal">думает...</b>
+</div>
+<div id="title">Kreekeer Младший</div>
+<div id="thought">...</div>
+
+<script>
+// ==================== НАСТРОЙКИ ====================
+const BRAIN_SIZE = 500;
+const BRICK = 6;
+const GROUND_HEIGHT = 80;
+const WALK_SPEED = 1.4;
+
+// ==================== CANVAS ====================
+const canvas = document.getElementById("c");
+const ctx = canvas.getContext("2d");
+function resize() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener("resize", resize);
+
+// ==================== МОЗГ ====================
+// 500 нейронов. Каждый хранит "рецепт" формы:
+//   px, py — позиция кирпича относительно центра
+//   activity — насколько он хорош (обучение)
+const neurons = [];
+for (let i = 0; i < BRAIN_SIZE; i++) {
+  const angle = i * 2.399963;
+  const radius = Math.sqrt(i / BRAIN_SIZE);
+  neurons.push({
+    px: Math.cos(angle) * radius * 8,
+    py: Math.sin(angle) * radius * 8,
+    activity: 0.7,
+    used: 0
+  });
+}
+
+// ==================== МИР ====================
+const bricks = [];
+const signals = [];
+let age = 0;
+let totalBeauty = 0.5;
+let experience = 0;
+
+// ==================== KREEKEER ====================
+const kree = {
+  x: canvas.width / 2,
+  y: canvas.height - GROUND_HEIGHT,
+  facing: 1,
+  step: 0,
+  action: "think",
+  actionTime: 0,
+  thinkCount: 0,
+  buildsSinceLastWalk: 0,
+  plan: [],
+  planPos: 0,
+  currentBricks: []
+};
+
+// ==================== КАСАНИЯ ====================
+canvas.addEventListener("touchstart", (e) => {
+  for (const t of e.touches) handleTouch(t.clientX, t.clientY);
+});
+canvas.addEventListener("mousedown", (e) => {
+  handleTouch(e.clientX, e.clientY);
+});
+
+function handleTouch(x, y) {
+  // Усиливаем нейроны последних кирпичей
+  const last = kree.currentBricks;
+  if (last && last.length > 0) {
+    for (const b of last) {
+      if (b.neurons) {
+        for (const n of b.neurons) {
+          n.activity = Math.min(3, n.activity + 0.4);
+        }
+      }
+    }
+    showHeart(x, y);
+  }
+}
+
+function showHeart(x, y) {
+  const d = document.createElement("div");
+  d.textContent = "❤️";
+  d.style.cssText = `position:fixed; left:${x}px; top:${y}px;
+    font-size:32px; pointer-events:none; z-index:999;
+    animation:fly 0.9s ease-out forwards;
+    transform:translate(-50%,-50%);`;
+  document.body.appendChild(d);
+  setTimeout(() => d.remove(), 900);
+}
+
+const style = document.createElement("style");
+style.textContent = `@keyframes fly {
+  0% { opacity:1; transform:translate(-50%,-50%) scale(1); }
+  100% { opacity:0; transform:translate(-50%,-180%) scale(1.6); }
+}`;
+document.head.appendChild(style);
+
+// ==================== ГЕНЕРАЦИЯ ФОРМЫ ====================
+// Он берёт топ-40 активных нейронов и делает из них форму
+function generateShape() {
+  const sorted = neurons.slice().sort((a, b) => b.activity - a.activity);
+
+  // Топ-30 хороших + 10 случайных (по индексу) для разнообразия
+  const chosen = [];
+  for (let i = 0; i < 30; i++) chosen.push(sorted[i]);
+  for (let i = 0; i < 10; i++) {
+    chosen.push(neurons[(kree.step * 7 + i * 13) % BRAIN_SIZE]);
+  }
+
+  // Сортируем по углу — форма будет связной
+  chosen.sort((a, b) => Math.atan2(a.py, a.px) - Math.atan2(b.py, b.px));
+
+  const groundY = canvas.height - GROUND_HEIGHT;
+  const plan = [];
+
+  for (let i = 0; i < chosen.length; i++) {
+    const n = chosen[i];
+    const scale = 1 + (n.activity - 0.7) * 1.5;
+    plan.push({
+      x: kree.x + n.px * scale * 3.5,
+      y: groundY + n.py * scale * 2 - 40,
+      neurons: [n]
+    });
+    n.used++;
+  }
+
+  // Соединяем промежуточными кирпичами
+  const extended = [];
+  for (let i = 0; i < plan.length; i++) {
+    extended.push(plan[i]);
+    if (i < plan.length - 1) {
+      const a = plan[i], b = plan[i + 1];
+      for (let t = 0.25; t < 0.8; t += 0.25) {
+        extended.push({
+          x: a.x + (b.x - a.x) * t,
+          y: a.y + (b.y - a.y) * t,
+          neurons: [chosen[i]]
+        });
+      }
+    }
+  }
+  return extended;
+}
+
+// ==================== ОЦЕНКА КРАСОТЫ ====================
+function evaluateShape(shape) {
+  if (shape.length < 5) return -0.5;
+
+  let sumX = 0, sumY = 0;
+  let minX = Infinity, maxX = -Infinity;
+  let minY = Infinity, maxY = -Infinity;
+  for (const b of shape) {
+    sumX += b.x; sumY += b.y;
+    if (b.x < minX) minX = b.x;
+    if (b.x > maxX) maxX = b.x;
+    if (b.y < minY) minY = b.y;
+    if (b.y > maxY) maxY = b.y;
+  }
+  const avgX = sumX / shape.length;
+  const centerX = (minX + maxX) / 2;
+  const symX = 1 - Math.min(1, Math.abs(avgX - centerX) / 30);
+
+  const w = maxX - minX;
+  const h = maxY - minY;
+  const sizeScore = (w > 20 && w < 220 && h > 20 && h < 220) ? 1 : 0.5;
+  const density = Math.min(1, shape.length / 50);
+
+  return ((symX + sizeScore + density) / 3 - 0.5) * 2;
+}
+
+// ==================== ОБУЧЕНИЕ ====================
+function learnFromResult(shape) {
+  const score = evaluateShape(shape);
+  totalBeauty = totalBeauty * 0.9 + ((score + 1) / 2) * 0.1;
+  experience++;
+
+  for (const b of shape) {
+    if (!b.neurons) continue;
+    for (const n of b.neurons) {
+      n.activity += score * 0.15;
+      if (n.activity < 0.2) n.activity = 0.2;
+      if (n.activity > 3) n.activity = 3;
+    }
+  }
+}
+
+// ==================== ДЕЙСТВИЯ ====================
+function startBuilding() {
+  kree.plan = generateShape();
+  kree.planPos = 0;
+  kree.action = "build";
+  kree.actionTime = 0;
+  kree.currentBricks = [];
+}
+
+function finishBuilding() {
+  if (kree.currentBricks && kree.currentBricks.length > 0) {
+    learnFromResult(kree.currentBricks);
+  }
+  kree.currentBricks = [];
+  kree.plan = [];
+  kree.planPos = 0;
+  kree.action = "think";
+  kree.actionTime = 0;
+  kree.buildsSinceLastWalk++;
+}
+
+function updateAction() {
+  kree.actionTime++;
+
+  if (kree.action === "think") {
+    if (kree.actionTime > 15) {
+      kree.thinkCount++;
+      
+      // ПРАВИЛО: строит 3 раза, потом 1 раз гуляет
+      if (kree.buildsSinceLastWalk >= 3) {
+        kree.action = (kree.step % 2 === 0) ? "walk_left" : "walk_right";
+        kree.actionTime = 0;
+        kree.buildsSinceLastWalk = 0;
+      } else {
+        // Строит почти всегда
+        startBuilding();
+      }
+    }
+  }
+
+  else if (kree.action === "walk_left" || kree.action === "walk_right") {
+    if (kree.actionTime > 50) {
+      kree.action = "think";
+      kree.actionTime = 0;
+    }
+  }
+}
+
+// ==================== ДВИЖЕНИЕ ====================
+function moveKree() {
+  kree.step++;
+  kree.y = canvas.height - GROUND_HEIGHT;
+
+  if (kree.action === "walk_left") {
+    kree.x -= WALK_SPEED;
+    kree.facing = -1;
+    if (kree.x < 80) kree.x = 80;
+  }
+  if (kree.action === "walk_right") {
+    kree.x += WALK_SPEED;
+    kree.facing = 1;
+    if (kree.x > canvas.width - 80) kree.x = canvas.width - 80;
+  }
+}
+
+// ==================== СТРОЙКА ====================
+function buildStepFn() {
+  if (kree.action !== "build") return;
+
+  if (kree.planPos >= kree.plan.length) {
+    finishBuilding();
+    return;
+  }
+
+  if (kree.step % 2 === 0) {
+    const p = kree.plan[kree.planPos];
+    if (p.x > 10 && p.x < canvas.width - 10 &&
+        p.y > 10 && p.y < canvas.height - GROUND_HEIGHT + 15) {
+      const brick = {
+        x: p.x, y: p.y, w: BRICK, h: BRICK,
+        activation: 0.5, age: 0,
+        neurons: p.neurons || []
+      };
+      bricks.push(brick);
+      if (kree.currentBricks) kree.currentBricks.push(brick);
+    }
+    kree.planPos++;
+  }
+}
+
+// ==================== СИГНАЛЫ ====================
+function spawnSignals() {
+  if (bricks.length < 2) return;
+  if (kree.step % 5 === 0) {
+    const a = (kree.step / 5) % bricks.length | 0;
+    const b = (a + 1) % bricks.length;
+    signals.push({
+      x1: bricks[a].x, y1: bricks[a].y,
+      x2: bricks[b].x, y2: bricks[b].y,
+      t: 0, to: b
+    });
+  }
+}
+
+function updateSignals() {
+  for (let i = signals.length - 1; i >= 0; i--) {
+    const s = signals[i];
+    s.t += 0.05;
+    if (s.t >= 1) {
+      if (bricks[s.to]) bricks[s.to].activation = Math.min(1, bricks[s.to].activation + 0.3);
+      signals.splice(i, 1);
+    }
+  }
+}
+
+// ==================== ОЧИСТКА ====================
+function cleanup() {
+  if (bricks.length > 500) bricks.splice(0, 30);
+}
+
+// ==================== РИСОВАНИЕ ====================
+function draw() {
+  ctx.fillStyle = "#0a0a0a";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // звёзды
+  for (let i = 0; i < 40; i++) {
+    const x = (i * 137) % canvas.width;
+    const y = (i * 73) % (canvas.height - GROUND_HEIGHT);
+    ctx.fillStyle = `rgba(255,255,255,${0.1 + (i % 5) * 0.05})`;
+    ctx.fillRect(x, y, 1, 1);
+  }
+
+  // земля
+  const groundY = canvas.height - GROUND_HEIGHT;
+  const gGrad = ctx.createLinearGradient(0, groundY, 0, canvas.height);
+  gGrad.addColorStop(0, "#2a1010");
+  gGrad.addColorStop(1, "#050000");
+  ctx.fillStyle = gGrad;
+  ctx.fillRect(0, groundY, canvas.width, GROUND_HEIGHT);
+  ctx.beginPath();
+  ctx.moveTo(0, groundY);
+  ctx.lineTo(canvas.width, groundY);
+  ctx.strokeStyle = "#f44";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // кирпичики
+  for (const b of bricks) {
+    b.age++;
+    b.activation *= 0.985;
+    if (b.activation > 0.4) {
+      ctx.shadowColor = "#f44";
+      ctx.shadowBlur = 6 * b.activation;
+    }
+    const bright = 80 + b.activation * 175;
+    ctx.fillStyle = `rgb(${bright|0}, ${(bright*0.3)|0}, ${(bright*0.3)|0})`;
+    ctx.fillRect(b.x - BRICK/2, b.y - BRICK/2, BRICK, BRICK);
+    ctx.shadowBlur = 0;
+  }
+
+  // сигналы
+  for (const s of signals) {
+    const x = s.x1 + (s.x2 - s.x1) * s.t;
+    const y = s.y1 + (s.y2 - s.y1) * s.t;
+    ctx.beginPath();
+    ctx.arc(x, y, 2, 0, Math.PI * 2);
+    ctx.fillStyle = "#fff";
+    ctx.shadowColor = "#f00";
+    ctx.shadowBlur = 10;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+
+  // Kreekeer
+  const grad = ctx.createRadialGradient(kree.x, kree.y, 0, kree.x, kree.y, 35);
+  grad.addColorStop(0, "rgba(255,0,0,0.5)");
+  grad.addColorStop(1, "rgba(255,0,0,0)");
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.arc(kree.x, kree.y, 35, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.arc(kree.x, kree.y, 5, 0, Math.PI * 2);
+  ctx.fillStyle = "#fff";
+  ctx.shadowColor = "#f00";
+  ctx.shadowBlur = 20;
+  ctx.fill();
+  ctx.shadowBlur = 0;
+
+  // глаза
+  ctx.beginPath();
+  ctx.arc(kree.x + kree.facing * 10, kree.y - 2, 2, 0, Math.PI * 2);
+  ctx.fillStyle = "rgba(255,255,255,0.6)";
+  ctx.fill();
+
+  // инфа
+  document.getElementById("brain").textContent = BRAIN_SIZE;
+  document.getElementById("exp").textContent = experience;
+  document.getElementById("beauty").textContent = Math.round(totalBeauty * 100) + "%";
+  document.getElementById("goal").textContent =
+    kree.action === "build" ? "строит" :
+    kree.action.startsWith("walk") ? "гуляет" : "думает";
+
+  let thought = "...";
+  if (kree.action === "build") {
+    thought = "Строю... " + kree.planPos + " / " + kree.plan.length;
+  } else if (kree.action.startsWith("walk")) {
+    thought = "Прогуливаюсь...";
+  } else {
+    if (totalBeauty > 0.7) thought = "У меня хорошо получается!";
+    else if (totalBeauty > 0.5) thought = "Ещё учусь...";
+    else thought = "Надо попробовать по-другому";
+  }
+  document.getElementById("thought").textContent = "💭 " + thought;
+}
+
+// ==================== ЦИКЛ ====================
+function loop() {
+  age++;
+  updateAction();
+  moveKree();
+  buildStepFn();
+  spawnSignals();
+  updateSignals();
+  cleanup();
+  draw();
+  requestAnimationFrame(loop);
+}
+loop();
+</script>
+</body>
+</html>
